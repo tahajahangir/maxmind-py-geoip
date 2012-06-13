@@ -22,7 +22,8 @@
 #include "GeoIP.h"
 #include "GeoIPCity.h"
 
-staticforward PyTypeObject GeoIP_GeoIPType;
+// thanks to: http://python3porting.com/cextensions.html
+static PyTypeObject GeoIP_GeoIPType;
 
 /* Exception object for python */
 static PyObject *PyGeoIPError;
@@ -523,41 +524,47 @@ static PyMethodDef GeoIP_Object_methods[] = {
   {NULL, NULL, 0, NULL}
 };
 
-static PyObject *
-GeoIP_GetAttr(PyObject *self, char *attrname)
-{
-  PyObject * ret;
-  char * database_info;
-  GeoIP_GeoIPObject* GeoIP = (GeoIP_GeoIPObject*)self;
-  if (strcmp(attrname, "GEOIP_STANDARD") == 0) {
-    return Py_BuildValue("i", 0);
-  } else if (strcmp(attrname, "database_info") == 0) {
-    database_info = GeoIP_database_info(GeoIP->gi);
-    ret = Py_BuildValue("z", database_info);
-    free(database_info);
-    return ret;
-  } else if (strcmp(attrname, "database_edition") == 0) {
-    return Py_BuildValue("z", GeoIPDBDescription[GeoIP_database_edition(GeoIP->gi)]);
-	}
-  return Py_FindMethod(GeoIP_Object_methods, self, attrname);
-}
-
+// thanks to: http://www.java-frameworks.com/python/pyflag/src/network/geoip.c.html
 static PyTypeObject GeoIP_GeoIPType = {
-  PyObject_HEAD_INIT(NULL)
-  0,
+  PyVarObject_HEAD_INIT(NULL, 0)
   "GeoIP",
   sizeof(GeoIP_GeoIPObject),
   0,
   GeoIP_GeoIP_dealloc, /*tp_dealloc*/
   0,          /*tp_print*/
-  (getattrfunc)GeoIP_GetAttr,  /*tp_getattr*/
+  0,          /*tp_getattr*/
   0,          /*tp_setattr*/
   0,          /*tp_compare*/
   0,          /*tp_repr*/
   0,          /*tp_as_number*/
   0,          /*tp_as_sequence*/
   0,          /*tp_as_mapping*/
-  0,          /*tp_hash */
+  0,                         /* tp_hash */
+	0,                         /* tp_call */
+	0,                         /* tp_str */
+	0,                         /* tp_getattro */
+	0,                         /* tp_setattro */
+	0,                         /* tp_as_buffer */
+	Py_TPFLAGS_DEFAULT,        /* tp_flags */
+	"GeoIP Object",      /* tp_doc */
+	0,	                       /* tp_traverse */
+	0,                         /* tp_clear */
+	0,                         /* tp_richcompare */
+	0,                         /* tp_weaklistoffset */
+	0,                         /* tp_iter */
+	0,                         /* tp_iternext */
+	GeoIP_Object_methods,          /* tp_methods */
+	0,                         /* tp_members */
+	0,                         /* tp_getset */
+	0,                         /* tp_base */
+	0,                         /* tp_dict */
+	0,                         /* tp_descr_get */
+	0,                         /* tp_descr_set */
+	0,                         /* tp_dictoffset */
+	0,                         /* tp_init */
+	//(initproc)GeoIP_init,      /* tp_init */
+	0,                         /* tp_alloc */
+	0,                         /* tp_new */
 };
 
 static PyMethodDef GeoIP_Class_methods[] = {
@@ -568,16 +575,30 @@ static PyMethodDef GeoIP_Class_methods[] = {
   {NULL, NULL, 0, NULL}
 };
 
-DL_EXPORT(void)
-initGeoIP(void) 
+PyMODINIT_FUNC
+PyInit_GeoIP(void) 
 {
   PyObject *m, *d, *tmp, *ccode, *cname, *ccont, *name;
   int i;
   const int total_ccodes = sizeof (GeoIP_country_code) /
     sizeof (GeoIP_country_code[0]);
-  GeoIP_GeoIPType.ob_type = &PyType_Type;
+  //http://ivazquez.livejournal.com/4989.html
+  GeoIP_GeoIPType.tp_new = PyType_GenericNew;
+  if (PyType_Ready(&GeoIP_GeoIPType) < 0)
+  	return NULL;
 
-  m = Py_InitModule("GeoIP", GeoIP_Class_methods);
+  static struct PyModuleDef moduledef = {
+        PyModuleDef_HEAD_INIT,
+        "GeoIP",     /* m_name */
+        "GeoIP module for python 3",  /* m_doc */
+        -1,                  /* m_size */
+        GeoIP_Class_methods,    /* m_methods */
+        NULL,                /* m_reload */
+        NULL,                /* m_traverse */
+        NULL,                /* m_clear */
+        NULL,                /* m_free */
+  };
+  m = PyModule_Create(&moduledef);
   d = PyModule_GetDict(m);
 
   PyGeoIPError = PyErr_NewException("py_geoip.error", NULL, NULL);
@@ -589,14 +610,14 @@ initGeoIP(void)
 
   for (i = 0; i<total_ccodes; i++)
   {
-    name = PyString_FromString(GeoIP_country_code[i]);
+    name = PyBytes_FromString(GeoIP_country_code[i]);
     PyTuple_SET_ITEM(ccode, i, name);
 
-    tmp = PyString_FromString(GeoIP_country_name[i]);
+    tmp = PyBytes_FromString(GeoIP_country_name[i]);
     PyDict_SetItem(cname, name, tmp);
     Py_DECREF(tmp);
 
-    tmp = PyString_FromString(GeoIP_country_continent[i]);
+    tmp = PyBytes_FromString(GeoIP_country_continent[i]);
     PyDict_SetItem(ccont, name, tmp);
     Py_DECREF(tmp);
   }
@@ -608,43 +629,44 @@ initGeoIP(void)
   PyDict_SetItemString(d, "country_continents", ccont);
   Py_DECREF(ccont);
 
-  tmp = PyInt_FromLong(GEOIP_STANDARD);
+  tmp = PyLong_FromLong(GEOIP_STANDARD);
   PyDict_SetItemString(d, "GEOIP_STANDARD", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_MEMORY_CACHE);
+  tmp = PyLong_FromLong(GEOIP_MEMORY_CACHE);
   PyDict_SetItemString(d, "GEOIP_MEMORY_CACHE", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_CHECK_CACHE);
+  tmp = PyLong_FromLong(GEOIP_CHECK_CACHE);
   PyDict_SetItemString(d, "GEOIP_CHECK_CACHE", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_INDEX_CACHE);
+  tmp = PyLong_FromLong(GEOIP_INDEX_CACHE);
   PyDict_SetItemString(d, "GEOIP_INDEX_CACHE", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_CHARSET_ISO_8859_1);
+  tmp = PyLong_FromLong(GEOIP_CHARSET_ISO_8859_1);
   PyDict_SetItemString(d, "GEOIP_CHARSET_ISO_8859_1", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_CHARSET_UTF8);
+  tmp = PyLong_FromLong(GEOIP_CHARSET_UTF8);
   PyDict_SetItemString(d, "GEOIP_CHARSET_UTF8", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_UNKNOWN_SPEED);
+  tmp = PyLong_FromLong(GEOIP_UNKNOWN_SPEED);
   PyDict_SetItemString(d, "GEOIP_UNKNOWN_SPEED", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_DIALUP_SPEED);
+  tmp = PyLong_FromLong(GEOIP_DIALUP_SPEED);
   PyDict_SetItemString(d, "GEOIP_DIALUP_SPEED", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_CABLEDSL_SPEED);
+  tmp = PyLong_FromLong(GEOIP_CABLEDSL_SPEED);
   PyDict_SetItemString(d, "GEOIP_CABLEDSL_SPEED", tmp);
   Py_DECREF(tmp);
 
-  tmp = PyInt_FromLong(GEOIP_CORPORATE_SPEED);
+  tmp = PyLong_FromLong(GEOIP_CORPORATE_SPEED);
   PyDict_SetItemString(d, "GEOIP_CORPORATE_SPEED", tmp);
   Py_DECREF(tmp);
+  return m;
 }
